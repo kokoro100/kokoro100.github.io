@@ -7,49 +7,40 @@ categories: ssl
 
 OpenSSL は libssl と libcrypto の二つからできている
 
-##### libssl
+### [libssl](https://www.openssl.org/docs/manmaster/ssl/ssl.html)
+---
 通信まわりを実装したライブラリ。
-"https://www.openssl.org/docs/manmaster/ssl/ssl.html
 
-##### libcrypt
+### [libcrypt](https://www.openssl.org/docs/manmaster/crypto/crypto.html)
+---
 暗号関連を実装したライブラリ。
-https://www.openssl.org/docs/manmaster/crypto/crypto.html
 
-# libssl
+この記事では libssl を扱う。
 
 ### Session と Connection
+---
 
-Session と Connection について
+Session は OSI参照モデル五層のセッション層に相当する。通信開始から通信終了までの一つの接続単位をさす。
 
-##### Session
-OSI参照モデル五層のセッション層に相当する。
-通信開始から通信終了までの一つの接続単位のこと。
+Connection は OSI参照モデル四層のトランスポート層に相当する。SSL では 一般に TCPコネクションとなる。
 
-##### Connection
+一つの Session につき一つ以上の Connection が存在する。Session が維持されている限り Connection が切断されても Session を再開することができる。具体的には、Session 情報をファイルに保存しておき、再起動後に Session を再開することができる。
 
-OSI参照モデル四層のトランスポート層に相当する。ある Session における一つの通信チャンネルのこと。SSL では 一般に TCPコネクションを指す。
-
-Connection とは論理的な回線チャンネルとなる。一つの Session につき一つ以上の Connection が存在する。
-Session は、接続が維持されている限り再利用することができる。具体的には、Session 情報をファイルに保存しておき、再起動後に Session を再開すること等が挙げられる。
-
-SSL の場合、Session は共有秘密情報（master_secret）を持つ。
-Session に関連付けられた各 Connection は、それぞれ暗号スイートやシーケンス番号、暗号化鍵、MAC 鍵を独立して持つことに注意する。
+SSL の場合、Session は共有秘密情報（master_secret）を持つ。Session に関連付けられた各 Connection は、それぞれ暗号スイートやシーケンス番号、暗号化鍵、MAC 鍵を独立して持つことに注意する。
 
 ### 参照カウンタ
-
+---
 OpenSSL API が返す構造体は参照カウンタで寿命管理されている（ことが多い）。
 
-OpenSSL API には `get0` と `get1` というサフィックスがついていることがある。
+OpenSSL API には `get0` と `get1` というサフィックスがついていることがあり、それぞれぞれ参照カウンタの扱いが異なる。
 
-- get0:
-  呼び出し側が参照を保持しない（参照カウンタがインクリメントされない）
-- get1:
-  呼び出した側が参照を保持する（参照カウンタがインクリメントされる）</p>
+`get0` は呼び出し側が参照を保持しない（参照カウンタがインクリメントされない
 
-となっている。無印の `get` は基本的に `get0` と同様である（関数によって異なる模様）
+`get1` は呼び出した側が参照を保持する（参照カウンタがインクリメントされる
 
-##### 例
-`SSL` から `SSL_SESSION` を取得する get API
+無印の `get` は基本的に `get0` と同様である（関数によって異なる模様）
+
+#### 例. `SSL` から `SSL_SESSION` を取得する get API
 
 {% highlight c++ %}
 SSL_SESSION *SSL_get_session(const SSL *ssl);
@@ -57,19 +48,18 @@ SSL_SESSION *SSL_get0_session(const SSL *ssl);
 SSL_SESSION *SSL_get1_session(SSL *ssl);
 {% endhighlight %}
 
-`get1` で参照を保持した場合は各構造体の free を呼ぶことで適切に参照を手放すこと。基本的には `<構造体名>_free()` という形式になっている。
+`get1` で参照を保持した場合は各構造体の free を呼ぶことで適切に参照を手放すこと。基本的には `<構造体名>_free()` という命名規則になっている。
 
 {% highlight c++ %}
 void SSL_SESSION_free(SSL_SESSION *session);
 {% endhighlight %}
 
 ### データ構造
+---
 
 OpenSSL API の主なデータ構造について
 
-### SSL 関連のデータ構造
-
-##### SSL_CTX
+#### SSL_CTX
 
 SSL についてグローバルな設定を保持するオブジェクト。
 プロトコルや暗号スイート、セッションキャッシュ設定、コールバック、鍵、証明書等を保持する
@@ -78,7 +68,7 @@ SSL についてグローバルな設定を保持するオブジェクト。
 SSL_CTX *SSL_CTX_new(const SSL_METHOD *method);
 {% endhighlight %}
 
-##### SSL_METHOD
+#### SSL_METHOD
 
 SSL のプロトコルを実装する関数のデータ構造。`SSL_METHOD` を `SSL_CTX_new()` に渡し利用するプロトコルを指定する。
 特定のプロトコルバージョンを指定して利用する場合は下記のメソッドを指定する（非推奨）。
@@ -133,7 +123,7 @@ DTLS1_2_VERSION
 特定バージョンの使用禁止をする `SSL_CTX_set_options` と併用することができる。
 だが、必要が無い限りは上記メソッドを用いるべきである。
 
-##### SSL_CHIPHERs
+#### SSL_CHIPHERs
 
 SSL/TLS における暗号スイートを規定する。
 [https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_cipher_list.html][https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_cipher_list.html]
@@ -153,44 +143,45 @@ Returns a string like &quot;SSLv3&quot; or &quot;TLSv1.2&quot; which indicates t
 {% endhighlight %}
 
 
-##### SSL_SESSION
+#### SSL_SESSION
 
 SSL Session を表すデータ構造。SSL Connection における SSL_CHIPHERs, 証明書, 鍵, etc を保持する。
 Sesseion の再利用（再度 Handshake しない）でも利用する。再利用期間は最大でも24時間程度が推奨されている。
 
-##### SSL
+#### SSL
 
 SSL Connectionを管理する構造体。
 SSL/TLS 実装における主要なデータ構造であり、様々な OpenSSL API の起点となる
 
 
 ### 証明書関連
-
+---
 OpenSSL で証明書を取り扱う際に登場するデータ構造について
 
-##### x509
+#### x509
 
 証明書データ。
 
-##### X509_STORE
+#### X509_STORE
 
 証明書や CRL を保持するストア
 
-##### X509_STORE_CTX
+#### X509_STORE_CTX
 
-<p>証明書関連の処理に生成されて、処理が終わると破棄される。テンポラリなオブジェクト。</p>
+証明書関連の処理に生成されて、処理が終わると破棄される。テンポラリなオブジェクト
 
 ### その他
-
-##### Session Ticket
+---
+#### Session Ticket
 
 SSL セッションのキャッシュをサーバーではなくクライアント側に保持する仕組みがある（RFC5077 Session Resumption without Server-Side State）。これは、セッション情報をサーバー側で暗号化して（クライアントには解読不可能）クライアント側で保持し、セッション再開時にそれをクライアントがサーバーへと送信、サーバー側での検証結果に問題なければ送られてきた Session 情報から Session を再開するというもの。このとき、この暗号化された Session 情報を Session Ticket という。
 
 ## callback 登録による挙動の変更
+---
 
 OpenSSL ではコールバック関数を登録することによって多くの実装をデフォルトからカスタマイズすることができる。
 
-##### 例：session_id の生成とマッチング<
+#### 例.session_id の生成とマッチング
 
 {% highlight c++ %}
 typedef int (*GEN_SESSION_CB)(const SSL *ssl, unsigned char *id, unsigned int *id_len);
@@ -203,8 +194,8 @@ int SSL_has_matching_session_id(const SSL *ssl, const unsigned char *id,
 
 後述の証明書チェーン検証もコールバック関数を仕込むことでカスタムできる。
 
-## 実装の大きな流れ
-
+## 実装の流れ-SSLコネクションをはる
+---
 OpenSSL 具体的な実装手順について述べる。cURL と併用した場合についてもいずれまとめる。
 
 
@@ -217,11 +208,11 @@ OpenSSL 具体的な実装手順について述べる。cURL と併用した場�
 - SSL_shutdown</code>で TLS/SSL Connection を終了する
 
 
-## 証明書検証の流れ
-
+## 実装の流れ-証明書検証の流れ
+---
 SSL_connect() 時の証明書検証について
 
-##### SSL_get_verify_result
+#### SSL_get_verify_result
 
 {% highlight c++ %}
 long SSL_get_verify_result(const SSL *ssl);
@@ -230,7 +221,7 @@ long SSL_get_verify_result(const SSL *ssl);
 証明証の検証結果を返す。注意として、本関数では証明書の正当性のみを検証し、証明書の送り主の正当性（CN チェック）については検証しない。そのため、CN チェックは別途自分で実装すること。
 更に、`SSL_get_verify_result()` は証明書が送られてこなかった場合にも成功が返る仕様となっている。そのため、 <code>SSL_get_peer_certificate()</code> で NULL が返らないかも合わせてチェックすること。
 
-##### SSL_CTX_set_verify
+#### SSL_CTX_set_verify
 
 {% highlight c++ %}
 void SSL_CTX_set_verify(SSL_CTX *ctx, int mode,
@@ -247,7 +238,7 @@ callback 関数は Certificate chain 中の各 Certificate を検証する度に
 
 mode には下記のいずれかを指定する。
 
-##### SSL_VERIFY_NONE
+#### SSL_VERIFY_NONE
 
 |役割|解説|
 |:-|:-|
@@ -259,14 +250,14 @@ mode には下記のいずれかを指定する。
 <li>クライアント: サーバー証明書は検証される。もし証明書が無効である場合、 handshake は直ちに終了される。もしanonymous cipher によりサーバー証明書が送られなかった場合、SSL_VERIFY_PEER は無視される。</li>
 </ul></li>
 
-##### SSL_VERIFY_FAIL_IF_NO_PEER_CERT
+#### SSL_VERIFY_FAIL_IF_NO_PEER_CERT
 
 |役割|解説|
 |:-|:-|
 |サーバー|SSL_VERIFY_PEER と一緒に使われなければならない。もしクライアントから証明書が送られなかったら、handshake は&rdquo;handshake failure&rdquo; アラートとともに直ちに終了する|
 |クライアント|無視される|
 
-##### SSL_VERIFY_CLIENT_ONCE
+#### SSL_VERIFY_CLIENT_ONCE
 
 |役割|解説|
 |:-|:-|
