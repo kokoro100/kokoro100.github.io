@@ -194,22 +194,130 @@ int SSL_has_matching_session_id(const SSL *ssl, const unsigned char *id,
 
 後述の証明書チェーン検証もコールバック関数を仕込むことでカスタムできる。
 
-## 実装の流れ-SSLコネクションをはる
+## 実装の流れ
+---
+
+### SSLコネクションをはる
 ---
 OpenSSL 具体的な実装手順について述べる。cURL と併用した場合についてもいずれまとめる。
 
 
 1. `SSL_library_init` で初期化
 2. `SSL_CTX_new` で TLS/SSL Connection のためのコンテキストを作成する。このContext に対して Certificates や Algorithms の設定を行う
-3. `SSL_new` で SSL_CTX から SSL を作成する
+3. `SSL_new` で `SSL_CTX` から `SSL` を作成する
 4. `SSL_set_fd` で (socket API を使うならば) socket (connect 済み) を `SSL` に割り当てる
-5. `SSL_accept`（サーバー）もしくは <code>SSL_connect</code>（クライアント）によって TLS/SSL handshale を実行する
+5. `SSL_accept`（サーバー）もしくは `SSL_connect`（クライアント）によって TLS/SSL handshale を実行する
 6. `SSL_read`, `SSL_write` で TLS/SSL データを送受信する
 7. `SSL_shutdown`で TLS/SSL Connection を終了する
 
+### BIO を作成する
+`SSL_set_fd` で fd を指定する代わりに抽象的な BIO を指定する API も存在する。
 
-## 実装の流れ-証明書検証の流れ
----
+1. `BIO_new` で　`BIO` を作成
+2. `SSL_set_bio` で `SSL` に `BIO` をセットする
+
+{% highlight c++ %}
+typedef struct bio_method_st {
+    int type;
+    const char *name;
+    int (*bwrite) (BIO *, const char *, int);
+    int (*bread) (BIO *, char *, int);
+    int (*bputs) (BIO *, const char *);
+    int (*bgets) (BIO *, char *, int);
+    long (*ctrl) (BIO *, int, long, void *);
+    int (*create) (BIO *);
+    int (*destroy) (BIO *);
+    long (*callback_ctrl) (BIO *, int, bio_info_cb *);
+} BIO_METHOD;
+{% endhighlight %}
+
+{% highlight c++ %}
+BIO *  BIO_new(BIO_METHOD *type);
+int    BIO_set(BIO *a,BIO_METHOD *type);
+int    BIO_free(BIO *a);
+void   BIO_vfree(BIO *a);
+void   BIO_free_all(BIO *a);
+{% endhighlight %}
+
+### ノンブロッキングのための config をする(optional)
+
+{% highlight c++ %}
+int SSL_get_read_ahead(const SSL *s);
+void SSL_set_read_ahead(SSL *s, int yes);
+{% endhighlight %}
+
+[SSL_set_read_ahead](https://www.openssl.org/docs/man1.0.2/ssl/SSL_set_read_ahead.html)
+
+ノンブロッキング読み込み対して、可能な限りデータを読み出すか否かの指定をする。
+
+OpenSSL が x byte を要求していて、BIO に y byte がある場合(y>x)、`yes` が true の場合 y byte すべてを読み出す。false の場合、x byte だけ読み出す。
+BorringSSL で DTLS の場合、内部で `yes=true` を指定している。
+
+### SSL_connect のブロッキング、ノンブロッキングについて
+
+`SSL_connect`は `BIO` が ブロッキングならばハンドシェイク完了してから return する
+
+`BIO` がノンブロッキングの場合、まだ connect が完了できない場合は return -1 が返り `SSL_get_error` から `SSL_ERROR_WANT_READ` or `SSL_ERROR_WANT_WRITE`が返る。
+この場合、epoll wait する等して適切に待った後、再度 `SSL_connect` を呼ぶ。
+
+### デバッグ情報出力
+
+`SSL_CTX_set_info_callback`, `SSL_set_info_callback` でコールバックを登録すると SSL connection についてコールバックでデバッグ用情報を受け取ることができる
+
+{% highlight c++ %}
+ void SSL_CTX_set_info_callback(SSL_CTX *ctx, void (*callback)());
+ void (*SSL_CTX_get_info_callback(const SSL_CTX *ctx))();
+
+ void SSL_set_info_callback(SSL *ssl, void (*callback)());
+ void (*SSL_get_info_callback(const SSL *ssl))();
+{% endhighlight %}
+
+[SSL_CTX_set_info_callback](https://wiki.openssl.org/index.php/Manual:SSL_CTX_set_info_callback(3))
+
+where はどこで（どの context で）callback function が呼び出されたか。ビットマスク。
+
+ret が 0 でエラー。
+
+{% highlight c++ %}
+ void apps_ssl_info_callback(SSL *s, int where, int ret)
+	{
+	const char *str;
+	int w;
+
+	w=where& ~SSL_ST_MASK;
+
+	if (w & SSL_ST_CONNECT) str="SSL_connect";
+	else if (w & SSL_ST_ACCEPT) str="SSL_accept";
+	else str="undefined";
+
+	if (where & SSL_CB_LOOP)
+		{
+		BIO_printf(bio_err,"%s:%s\n",str,SSL_state_string_long(s));
+		}
+	else if (where & SSL_CB_ALERT)
+		{
+		str=(where & SSL_CB_READ)?"read":"write";
+		BIO_printf(bio_err,"SSL3 alert %s:%s:%s\n",
+			str,
+			SSL_alert_type_string_long(ret),
+			SSL_alert_desc_string_long(ret));
+		}
+	else if (where & SSL_CB_EXIT)
+		{
+		if (ret == 0)
+			BIO_printf(bio_err,"%s:failed in %s\n",
+				str,SSL_state_string_long(s));
+		else if (ret < 0)
+			{
+			BIO_printf(bio_err,"%s:error in %s\n",
+				str,SSL_state_string_long(s));
+			}
+		}
+	}
+    {% endhighlight %}
+
+
+### 証明書検証
 `SSL_connect` 時の証明書検証について
 
 #### SSL_get_verify_result
@@ -220,6 +328,14 @@ long SSL_get_verify_result(const SSL *ssl);
 
 証明証の検証結果を返す。注意として、本関数では証明書の正当性のみを検証し、証明書の送り主の正当性（CN チェック）については検証しない。そのため、CN チェックは別途自分で実装すること。
 更に、`SSL_get_verify_result` は証明書が送られてこなかった場合にも成功が返る仕様となっている。そのため、 <code>SSL_get_peer_certificate</code> で NULL が返らないかも合わせてチェックすること。
+
+#### SSL_CTX_set_cert_verify_callback
+
+{% highlight c++ %}
+void SSL_CTX_set_cert_verify_callback(SSL_CTX *ctx, int (*callback)(X509_STORE_CTX *,void *), void *arg);
+{% highlight c++ %}
+
+証明書検証の処理を実装する。このAPIを使わなかった場合、OpenSSL のデフォルト証明書検証の実装が動作する。
 
 #### SSL_CTX_set_verify
 
