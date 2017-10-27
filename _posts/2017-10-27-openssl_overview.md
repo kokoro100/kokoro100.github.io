@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "OpenSSL 自分メモ"
+title:  "OpenSSL メモ"
 date:   2017-10-27 00:43:50 +0900
 categories: ssl
 ---
@@ -48,7 +48,7 @@ SSL_SESSION *SSL_get0_session(const SSL *ssl);
 SSL_SESSION *SSL_get1_session(SSL *ssl);
 {% endhighlight %}
 
-`get1` で参照を保持した場合は各構造体の free を呼ぶことで適切に参照を手放すこと。基本的には `<構造体名>_free()` という命名規則になっている。
+`get1` で参照を保持した場合は各構造体の free を呼ぶことで適切に参照を手放すこと。基本的には `<構造体名>_free` という命名規則になっている。
 
 {% highlight c++ %}
 void SSL_SESSION_free(SSL_SESSION *session);
@@ -70,10 +70,10 @@ SSL_CTX *SSL_CTX_new(const SSL_METHOD *method);
 
 #### SSL_METHOD
 
-SSL のプロトコルを実装する関数のデータ構造。`SSL_METHOD` を `SSL_CTX_new()` に渡し利用するプロトコルを指定する。
+SSL のプロトコルを実装する関数のデータ構造。`SSL_METHOD` を `SSL_CTX_new` に渡し利用するプロトコルを指定する。
 特定のプロトコルバージョンを指定して利用する場合は下記のメソッドを指定する（非推奨）。
 
-[openssl method]phttps://www.openssl.org/docs/manmaster/ssl/SSL_CTX_new.html]
+[openssl method](https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_new.html)
 
 {% highlight c++ %}
 const SSL_METHOD *SSLv3_client_method(void);
@@ -126,7 +126,7 @@ DTLS1_2_VERSION
 #### SSL_CHIPHERs
 
 SSL/TLS における暗号スイートを規定する。
-[https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_cipher_list.html][https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_cipher_list.html]
+[https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_cipher_list.html](https://www.openssl.org/docs/manmaster/ssl/SSL_CTX_set_cipher_list.html)
 
 {% highlight c++ %}
 char *SSL_CIPHER_description(SSL_CIPHER *cipher, char *buf, int len);
@@ -199,18 +199,18 @@ int SSL_has_matching_session_id(const SSL *ssl, const unsigned char *id,
 OpenSSL 具体的な実装手順について述べる。cURL と併用した場合についてもいずれまとめる。
 
 
-1. SSL_library_init()</code> で初期化
-- SSL_CTX_new</code> で TLS/SSL Connection のためのコンテキストを作成する。このContext に対して Certificates や Algorithms の設定を行う
-- SSL_new</code> で SSL_CTX から SSL を作成する
-- SSL_set_fd</code> で sockfd(connect 済み) を SSL に割り当てる
-- SSL_accept</code>（サーバー）もしくは <code>SSL_connect</code>（クライアント）によって TLS/SSL handshale を実行する
-- SSL_read</code><code>SSL_write</code>　で TLS/SSL データを送受信する
-- SSL_shutdown</code>で TLS/SSL Connection を終了する
+1. `SSL_library_init` で初期化
+2. `SSL_CTX_new` で TLS/SSL Connection のためのコンテキストを作成する。このContext に対して Certificates や Algorithms の設定を行う
+3. `SSL_new` で SSL_CTX から SSL を作成する
+4. `SSL_set_fd` で (socket API を使うならば) socket (connect 済み) を `SSL` に割り当てる
+5. `SSL_accept`（サーバー）もしくは <code>SSL_connect</code>（クライアント）によって TLS/SSL handshale を実行する
+6. `SSL_read`, `SSL_write` で TLS/SSL データを送受信する
+7. `SSL_shutdown`で TLS/SSL Connection を終了する
 
 
 ## 実装の流れ-証明書検証の流れ
 ---
-SSL_connect() 時の証明書検証について
+`SSL_connect` 時の証明書検証について
 
 #### SSL_get_verify_result
 
@@ -219,7 +219,7 @@ long SSL_get_verify_result(const SSL *ssl);
 {% endhighlight %}
 
 証明証の検証結果を返す。注意として、本関数では証明書の正当性のみを検証し、証明書の送り主の正当性（CN チェック）については検証しない。そのため、CN チェックは別途自分で実装すること。
-更に、`SSL_get_verify_result()` は証明書が送られてこなかった場合にも成功が返る仕様となっている。そのため、 <code>SSL_get_peer_certificate()</code> で NULL が返らないかも合わせてチェックすること。
+更に、`SSL_get_verify_result` は証明書が送られてこなかった場合にも成功が返る仕様となっている。そのため、 <code>SSL_get_peer_certificate</code> で NULL が返らないかも合わせてチェックすること。
 
 #### SSL_CTX_set_verify
 
@@ -228,7 +228,7 @@ void SSL_CTX_set_verify(SSL_CTX *ctx, int mode,
                         int (*verify_callback)(int, X509_STORE_CTX *));
 {% endhighlight %}
 
-証明書検証の処理は `SSL_CTX_set_verify()` で独自に実装することができる。
+証明書検証の処理は `SSL_CTX_set_verify` で独自に実装することができる。
 独自実装しなかった場合は、`X509_STORE` に登録された RootCA に基づき OpenSSL のデフォルト実装によって検証される。</p>
 
 callback 関数は Certificate chain 中の各 Certificate を検証する度に呼びだされる。
@@ -243,12 +243,14 @@ mode には下記のいずれかを指定する。
 |役割|解説|
 |:-|:-|
 |クライアント|anonymous cipher を利用していないかぎり（デフォルト無効）|
-|サーバー|クライアントによって検証される。検証結果は `SSL_get_verify_result()` によって取得することができるが、証明書検証の成功失敗に関わらず handshake は継続される。|
+|サーバー|クライアントによって検証される。検証結果は `SSL_get_verify_result` によって取得することができるが、証明書検証の成功失敗に関わらず handshake は継続される。|
 
-<ul>
-<li>サーバー: クライアントに証明書お湯級を送信する。クライアントから送信された証明書は（もし存在すれば）検証され、証明書が無効であれば handshake は 失敗原因メッセージのアラートとともに直ちに終了される。挙動はさらに SSL_VERIFY_FAIL_IF_NO_PEER_CERT と SSL_VERIFY_CLIENT_ONCE によって変更する事ができる。</li>
-<li>クライアント: サーバー証明書は検証される。もし証明書が無効である場合、 handshake は直ちに終了される。もしanonymous cipher によりサーバー証明書が送られなかった場合、SSL_VERIFY_PEER は無視される。</li>
-</ul></li>
+#### SSL_VERIFY_PEER
+
+|役割|解説|
+|:-|:-|
+|サーバー|クライアントに証明書お湯級を送信する。クライアントから送信された証明書は（もし存在すれば）検証され、証明書が無効であれば handshake は 失敗原因メッセージのアラートとともに直ちに終了される。挙動はさらに `SSL_VERIFY_FAIL_IF_NO_PEER_CERT` と `SSL_VERIFY_CLIENT_ONCE` によって変更する事ができる。|
+|クライアント|サーバー証明書は検証される。もし証明書が無効である場合、 handshake は直ちに終了される。もしanonymous cipher によりサーバー証明書が送られなかった場合、SSL_VERIFY_PEER は無視される|
 
 #### SSL_VERIFY_FAIL_IF_NO_PEER_CERT
 
